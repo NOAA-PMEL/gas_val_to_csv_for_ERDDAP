@@ -1297,6 +1297,7 @@ def val_df_reorder_columns(super_big_val_df):
         'Flow_ave', 'Flow_sd', 'CO2_dry_ave', 'CO2_dry_Tcorr_ave',
         'Num_samples','CO2_dry_residual_ave_of_ave','CO2_dry_residual_sd_of_ave',
         'CO2_dry_Tcorr_residual_ave_of_ave','CO2_dry_Tcorr_residual_sd_of_ave',
+        'CO2_dry_residual_max_of_ave','CO2_dry_Tcorr_residual_max_of_ave',
         'CO2LastZero', 'CO2kzero', 'CO2LastSpan', 'CO2LastSpan2', 'CO2kspan',
         'CO2kspan2', 'ver', 'startup', 'gps', 'time_of_report_command', 'span',
         'spandiff', 'equil', 'warmup', 'pumpon', 'pumpoff', 'sampleco2',
@@ -1366,6 +1367,8 @@ def val_df_rename_columns(super_big_val_df):
     'CO2_dry_residual_sd_of_ave':'CO2_DRY_RESIDUAL_REF_LAB_STDDEV_ASVCO2',\
     'CO2_dry_Tcorr_residual_ave_of_ave':'CO2_DRY_TCORR_RESIDUAL_REF_LAB_MEAN_ASVCO2',\
     'CO2_dry_Tcorr_residual_sd_of_ave':'CO2_DRY_TCORR_RESIDUAL_REF_LAB_STDDEV_ASVCO2',\
+    'CO2_dry_residual_max_of_ave':'CO2_DRY_RESIDUAL_REF_LAB_MAX_ASVCO2',\
+    'CO2_dry_Tcorr_residual_max_of_ave':'CO2_DRY_TCORR_RESIDUAL_REF_LAB_MAX_ASVCO2',\
     'out_of_range':'OUT_OF_RANGE','out_of_range_reason':'OUT_OF_RANGE_REASON'}
     
     super_big_val_df = super_big_val_df.rename(columns=ERDDAP_val_rename_dict)
@@ -1452,6 +1455,8 @@ def add_final_summary_rows(super_big_val_df):
     APOFF_mean = df_APOFF_0_thru_750.mean()
     EPOFF_std = df_EPOFF_0_thru_750.std(ddof=0)
     APOFF_std = df_APOFF_0_thru_750.std(ddof=0)
+    EPOFF_max = df_EPOFF_0_thru_750.max()
+    APOFF_max = df_APOFF_0_thru_750.max()
 
     change={'mode':['EPOFF Summary','APOFF Summary'],\
         'datetime':[ftp1s,ftp2s], 'residual_ave':[np.NaN,np.NaN],\
@@ -1493,6 +1498,10 @@ def add_final_summary_rows(super_big_val_df):
             APOFF_mean.loc['residual_Tcorr_ave']],\
         'CO2_dry_Tcorr_residual_sd_of_ave':[EPOFF_std.loc['residual_Tcorr_ave'],\
             APOFF_std.loc['residual_Tcorr_ave']],
+        'CO2_dry_residual_max_of_ave':[EPOFF_max.loc['residual_dry_ave'],\
+            APOFF_max.loc['residual_dry_ave']],
+        'CO2_dry_Tcorr_residual_max_of_ave':[EPOFF_max.loc['residual_Tcorr_ave'],\
+            APOFF_max.loc['residual_Tcorr_ave']],
         'Num_samples':[len(df_EPOFF_0_thru_750),len(df_APOFF_0_thru_750)]}
 
     last_two_rows.update(pd.DataFrame(change))
@@ -1631,7 +1640,6 @@ def val_update_missing_v1_8(config_stuff,sn):
 
     return config_stuff
 
-
 def load_Val_file(val_filename,big_dry_df=pd.DataFrame(),\
     big_stats_df=pd.DataFrame(),big_flags_df=pd.DataFrame(),\
     big_coeff_sync_df=pd.DataFrame()):
@@ -1676,14 +1684,16 @@ def load_Val_file(val_filename,big_dry_df=pd.DataFrame(),\
     
     if ( big_dry_df.empty or big_stats_df.empty or big_flags_df.empty or\
         big_coeff_sync_df.empty):
-        super_big_val_df['CO2_dry_ave']=[.1]*len(super_big_val_df)
-        super_big_val_df['CO2_dry_Tcorr_ave']=[.1]*len(super_big_val_df)
+        super_big_val_df['CO2_dry_ave']=[np.NaN]*len(super_big_val_df)
+        super_big_val_df['CO2_dry_Tcorr_ave']=[np.NaN]*len(super_big_val_df)
         super_big_val_df['CO2_dry_residual_ave_of_ave']=[np.NaN]*len(super_big_val_df)
         super_big_val_df['CO2_dry_residual_sd_of_ave']=[np.NaN]*len(super_big_val_df)
         super_big_val_df['CO2_dry_Tcorr_residual_ave_of_ave']=[np.NaN]*len(super_big_val_df)
         super_big_val_df['CO2_dry_Tcorr_residual_sd_of_ave']=[np.NaN]*len(super_big_val_df)
-        super_big_val_df['residual_Tcorr_ave'] = [.1]*len(super_big_val_df)
-        super_big_val_df['residual_Tcorr_sd'] = [.1]*len(super_big_val_df)
+        super_big_val_df['CO2_dry_residual_max_of_ave']=[np.NaN]*len(super_big_val_df)
+        super_big_val_df['CO2_dry_Tcorr_residual_max_of_ave']=[np.NaN]*len(super_big_val_df)
+        super_big_val_df['residual_Tcorr_ave'] = [np.NaN]*len(super_big_val_df)
+        super_big_val_df['residual_Tcorr_sd'] = [np.NaN]*len(super_big_val_df)
     elif ( not big_dry_df.empty and not big_stats_df.empty \
         and not big_flags_df.empty and not big_coeff_sync_df.empty):
 
@@ -1764,6 +1774,8 @@ def load_Val_file(val_filename,big_dry_df=pd.DataFrame(),\
     super_big_val_df['CO2_dry_residual_sd_of_ave']=[np.NaN]*len(super_big_val_df) 
     super_big_val_df['CO2_dry_Tcorr_residual_ave_of_ave']=[np.NaN]*len(super_big_val_df)
     super_big_val_df['CO2_dry_Tcorr_residual_sd_of_ave']=[np.NaN]*len(super_big_val_df)
+    super_big_val_df['CO2_dry_residual_max_of_ave']=[np.NaN]*len(super_big_val_df)  # added 1/24/2021
+    super_big_val_df['CO2_dry_Tcorr_residual_max_of_ave']=[np.NaN]*len(super_big_val_df)  # added 1/24/2021
 
     # drop leftover columns created during merging
     super_big_val_df = super_big_val_df.drop(columns=['TS',\
