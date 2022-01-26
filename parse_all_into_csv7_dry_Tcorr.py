@@ -1524,6 +1524,164 @@ def add_final_summary_rows(super_big_val_df):
 
     return super_big_val_df
 
+def add_final_summary_rows_v2(super_big_val_df):
+
+    # read in json file from config folder to get the gas standard tag ranges for the summary
+    json_file = open('./config/summary_gas_standard_tag_ranges.json','r',encoding='utf-8')
+    summary_gas_standard_tag_ranges = json.load(json_file)
+    json_file.close()
+    num_ranges = len(summary_gas_standard_tag_ranges)
+
+    #if only the last row is copied, pandas will return series,
+    #so, copy the last two rows and manipulate values
+    #last_two_rows = super_big_val_df.iloc[-2:,:].copy().reset_index()
+    last_twelve_or_more_rows = super_big_val_df.iloc[-2*num_ranges:,:].copy().reset_index()
+
+    final_ts_str = super_big_val_df['datetime'].iloc[-1]
+    print(f'finat_ts_str = {final_ts_str}')
+    final_ts_str = final_ts_str.strip()
+    #last_whole_sec_idx = re.search(r'\dZ',final_ts_str).span()[0]  # whole seconds here
+    #floored_final_ts_str = final_ts_str[:last_whole_sec_idx] + 'Z'
+    floored_final_ts_str = final_ts_str  # unusual for this case
+    final_ts_plus_1sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
+        dt.timedelta(0,1)
+    final_ts_plus_2sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
+        dt.timedelta(0,2)
+
+    # ftp1s and ftps2s are final time plus 1 sec. and 2 sec., respectively.
+    ftp1s=final_ts_plus_1sec.strftime(' %Y-%m-%dT%H:%M:%S') + 'Z'
+    ftp2s=final_ts_plus_2sec.strftime(' %Y-%m-%dT%H:%M:%S') + 'Z'
+
+    list_of_cols_for_stats = ['residual_dry_ave','residual_sd',\
+        'residual_Tcorr_ave','residual_Tcorr_sd',\
+        'Li_Temp_ave','Li_Temp_sd','Li_Pres_ave','Li_Pres_sd',\
+        'O2_ave','O2_sd','RH_ave','RH_sd','RH_T_ave', 'RH_T_sd',
+        'Flow_ave', 'Flow_sd']
+
+    list_of_extra_ts=[]
+    list_of_changes=[]
+    list_of_changes.append(dict())
+    for idx in range(0,num_ranges):
+        final_ts_plus_x_sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
+            dt.timedelta(0,2*idx+1)
+        final_ts_plus_x_plus_1_sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
+            dt.timedelta(0,2*idx+2)
+        ftp_idx_s = final_ts_plus_x_sec.strftime(' %Y-%m-%dT%H:%M:%S') + 'Z'
+        ftp_idx_plus_1_s = final_ts_plus_x_plus_1_sec.strftime(' %Y-%m-%dT%H:%M:%S') + 'Z'
+
+        list_of_extra_ts.append(ftp_idx_s)
+        list_of_extra_ts.append(ftp_idx_plus_1_s)
+
+        upper_limit = summary_gas_standard_tag_ranges[idx]['upper']
+        lower_limit = summary_gas_standard_tag_ranges[idx]['lower']
+
+        mask_EPOFF_lower_thru_upper = (super_big_val_df['mode'] == 'EPOFF') & \
+            (super_big_val_df['gas_standard'] >= lower_limit) & \
+            (super_big_val_df['gas_standard'] < upper_limit)
+
+        mask_APOFF_lower_thru_upper = (super_big_val_df['mode'] == 'APOFF') & \
+            (super_big_val_df['gas_standard'] >= lower_limit) & \
+            (super_big_val_df['gas_standard'] < upper_limit)
+        # not big_dry_df.empty and not big_stats_df.empty
+        if ( not super_big_val_df.loc[mask_EPOFF_lower_thru_upper].empty and \
+            not super_big_val_df.loc[mask_APOFF_lower_thru_upper].empty ):
+
+            df_EPOFF_lower_thru_upper = super_big_val_df[list_of_cols_for_stats].\
+                loc[mask_EPOFF_lower_thru_upper].copy()
+
+            df_APOFF_lower_thru_upper = super_big_val_df[list_of_cols_for_stats].\
+                loc[mask_APOFF_lower_thru_upper].copy()
+        else:
+            raise Exception(f"""No gas standards within range of {upper_limit} and {lower_limit}
+                ppm found in .\config\summary_gas_standard_tag_ranges.json""")
+
+        EPOFF_mean = df_EPOFF_lower_thru_upper.mean()
+        APOFF_mean = df_APOFF_lower_thru_upper.mean()
+        EPOFF_std = df_EPOFF_lower_thru_upper.std(ddof=0)
+        APOFF_std = df_APOFF_lower_thru_upper.std(ddof=0)
+        EPOFF_max = df_EPOFF_lower_thru_upper.max()
+        APOFF_max = df_APOFF_lower_thru_upper.max()
+    
+        change_entry={'mode':['EPOFF Summary','APOFF Summary'],\
+        'datetime':[ftp_idx_s,ftp_idx_plus_1_s], 'residual_ave':[np.NaN,np.NaN],\
+        'residual_sd':[np.NaN,np.NaN],\
+        'gas_standard':[np.NaN,np.NaN],\
+        'gas_standard_tag':[summary_gas_standard_tag_ranges[idx]['tag']]*2,
+        'Li_Temp_ave':[EPOFF_mean.loc['Li_Temp_ave'],\
+            APOFF_mean.loc['Li_Temp_ave']],\
+        'Li_Temp_sd':[EPOFF_std.loc['Li_Temp_ave'],\
+            APOFF_std.loc['Li_Temp_ave']],\
+        'Li_Pres_ave':[EPOFF_mean.loc['Li_Pres_ave'],\
+            APOFF_mean.loc['Li_Pres_ave']],\
+        'Li_Pres_sd':[EPOFF_std.loc['Li_Pres_ave'],\
+            APOFF_std.loc['Li_Pres_ave']],\
+        'CO2_ave':[np.NaN,np.NaN], 'CO2_sd':[np.NaN,np.NaN],\
+        'O2_ave':[EPOFF_mean.loc['O2_ave'],\
+            APOFF_mean.loc['O2_ave']],\
+        'O2_sd':[EPOFF_std.loc['O2_ave'],\
+            APOFF_std.loc['O2_ave']],\
+        'RH_ave':[EPOFF_mean.loc['RH_ave'],\
+            APOFF_mean.loc['RH_ave']],\
+        'RH_sd':[EPOFF_std.loc['RH_ave'],\
+            APOFF_std.loc['O2_ave']],\
+        'RH_T_ave':[EPOFF_mean.loc['RH_T_ave'],\
+            APOFF_mean.loc['RH_T_ave']],\
+        'RH_T_sd':[EPOFF_std.loc['RH_T_ave'],\
+            APOFF_std.loc['RH_T_ave']],\
+        'Flow_ave':[EPOFF_mean.loc['Flow_ave'],\
+            APOFF_mean.loc['Flow_ave']],
+        'Flow_sd':[EPOFF_std.loc['Flow_ave'],\
+            APOFF_std.loc['Flow_ave']],\
+        'CO2_dry_ave':[np.NaN,np.NaN],\
+        'CO2_dry_Tcorr_ave':[np.NaN,np.NaN],\
+        'CO2_dry_residual_ave_of_ave':[EPOFF_mean.loc['residual_dry_ave'],\
+            APOFF_mean.loc['residual_dry_ave']],\
+        'CO2_dry_residual_sd_of_ave':[EPOFF_std.loc['residual_dry_ave'],\
+            APOFF_std.loc['residual_dry_ave']],\
+        'CO2_dry_Tcorr_residual_ave_of_ave':[EPOFF_mean.loc['residual_Tcorr_ave'],\
+            APOFF_mean.loc['residual_Tcorr_ave']],\
+        'CO2_dry_Tcorr_residual_sd_of_ave':[EPOFF_std.loc['residual_Tcorr_ave'],\
+            APOFF_std.loc['residual_Tcorr_ave']],
+        'CO2_dry_residual_max_of_ave':[EPOFF_max.loc['residual_dry_ave'],\
+            APOFF_max.loc['residual_dry_ave']],
+        'CO2_dry_Tcorr_residual_max_of_ave':[EPOFF_max.loc['residual_Tcorr_ave'],\
+            APOFF_max.loc['residual_Tcorr_ave']],
+        'Num_samples':[len(df_EPOFF_lower_thru_upper),len(df_APOFF_lower_thru_upper)]}
+
+        list_of_changes.append(change_entry)
+
+    # transform list_of_changes from a list of dictionary into a single large dictionary for
+    # integration into pandas
+    these_keys = list(list_of_changes[0].keys())
+    change = {}
+    for k in these_keys:
+        change[k] = []
+    for item in list_of_changes:
+        for k in these_keys:
+            change[k] = item[k] + change[k]
+
+    #last_two_rows.update(pd.DataFrame(change))
+    last_twelve_or_more_rows.update(pd.DataFrame(change))
+
+    list_of_flag_names = ['ASVCO2_GENERAL_ERROR_FLAGS', 'ASVCO2_ZERO_ERROR_FLAGS',
+    'ASVCO2_SPAN_ERROR_FLAGS', 'ASVCO2_SECONDARYSPAN_ERROR_FLAGS',
+    'ASVCO2_EQUILIBRATEANDAIR_ERROR_FLAGS', 'ASVCO2_RTC_ERROR_FLAGS',
+    'ASVCO2_FLOWCONTROLLER_FLAGS', 'ASVCO2_LICOR_FLAGS']
+    
+    # Unfortunatley, df.update(another_df) arbitrarily avoids NaN values. So force NaN.
+    list_of_NaN_cols = ['residual_ave','residual_sd','residual_dry_ave',
+        'residual_Tcorr_ave','residual_Tcorr_sd','gas_standard','CO2_ave',\
+        'CO2_sd','CO2_dry_ave','CO2_dry_Tcorr_ave']
+    list_of_NaN_cols += list_of_flag_names
+
+    for col in list_of_NaN_cols:
+        last_twelve_or_more_rows[col]=[np.NaN,np.NaN]*num_ranges
+
+    #super_big_val_df = super_big_val_df.append(last_two_rows,ignore_index=True)
+    super_big_val_df = super_big_val_df.append(last_twelve_or_more_rows,ignore_index=True)
+
+    return super_big_val_df
+
 def val_fix_nan_in_dict(bigDictionary):
     # It is expected that bigDictionary is a nested dictionary
     # with two keys referencing a list. Some of the entries of
@@ -1786,7 +1944,8 @@ def load_Val_file(val_filename,big_dry_df=pd.DataFrame(),\
     # pp.pprint(super_big_val_df.columns.values)
 
     #print(f'Before...len(super_big_val_df) = {len(super_big_val_df)}')
-    super_big_val_df = add_final_summary_rows(super_big_val_df)
+    #super_big_val_df = add_final_summary_rows(super_big_val_df)
+    super_big_val_df = add_final_summary_rows_v2(super_big_val_df)
     #print(f'After...len(super_big_val_df) = {len(super_big_val_df)}')
 
     super_big_val_df = super_big_val_df.drop(columns=['time_of_report_command',\

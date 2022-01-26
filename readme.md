@@ -4,11 +4,11 @@ This repository is used to convert the text files with .txt extension from ASVCO
 
 ## Installation
 
-Make sure that python is installed and added to the PATH. and use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
+Make sure that python is already installed and added to the PATH. and use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
 
 ### Create a virtual environment and activate it
 
-In Windows:
+In Windows:  
 Create a local subfolder, then open a command prompt (cmd) and use the command below.
 ```cmd
 C:\my_local_subfolder> python -m venv .\.venv
@@ -19,7 +19,7 @@ Next, activate the virtual environment with the activate .bat script.
 C:\my_local_subfolder> .\.venv\Scripts\acivate
 ```
 
-In Linux:
+In Linux:  
 Create a local subfolder, then open a bash prompt in that subfolder.
 ```bash
 my_name@my_PC:~/my_local_subfolder$ python3 -m venv ./venv
@@ -28,8 +28,9 @@ The above command will create a virtual environment in the subfolder \'.venv\' w
 Next, activate the virtual environment.
 ```bash
 my_name@my_PC:~/my_local_subfolder$ source ./venv/bin/activate
-```
-
+```  
+The virtual environment should now be active with a prompt similar to shown below.  
+  
 ### Install Python packages into the virtual environment
 
 In Windows:
