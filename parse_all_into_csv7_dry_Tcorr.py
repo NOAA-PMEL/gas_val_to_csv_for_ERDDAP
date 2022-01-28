@@ -1543,14 +1543,6 @@ def add_final_summary_rows_v2(super_big_val_df):
     #last_whole_sec_idx = re.search(r'\dZ',final_ts_str).span()[0]  # whole seconds here
     #floored_final_ts_str = final_ts_str[:last_whole_sec_idx] + 'Z'
     floored_final_ts_str = final_ts_str  # unusual for this case
-    final_ts_plus_1sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
-        dt.timedelta(0,1)
-    final_ts_plus_2sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
-        dt.timedelta(0,2)
-
-    # ftp1s and ftps2s are final time plus 1 sec. and 2 sec., respectively.
-    ftp1s=final_ts_plus_1sec.strftime(' %Y-%m-%dT%H:%M:%S') + 'Z'
-    ftp2s=final_ts_plus_2sec.strftime(' %Y-%m-%dT%H:%M:%S') + 'Z'
 
     list_of_cols_for_stats = ['residual_dry_ave','residual_sd',\
         'residual_Tcorr_ave','residual_Tcorr_sd',\
@@ -1560,7 +1552,6 @@ def add_final_summary_rows_v2(super_big_val_df):
 
     list_of_extra_ts=[]
     list_of_changes=[]
-    list_of_changes.append(dict())
     for idx in range(0,num_ranges):
         final_ts_plus_x_sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
             dt.timedelta(0,2*idx+1)
@@ -1653,15 +1644,29 @@ def add_final_summary_rows_v2(super_big_val_df):
     # transform list_of_changes from a list of dictionary into a single large dictionary for
     # integration into pandas
     these_keys = list(list_of_changes[0].keys())
+    print(these_keys)
     change = {}
     for k in these_keys:
         change[k] = []
     for item in list_of_changes:
         for k in these_keys:
-            change[k] = item[k] + change[k]
+            change[k] += item[k]
+            #change[k] = change[k] + item[k]
 
     #last_two_rows.update(pd.DataFrame(change))
-    last_twelve_or_more_rows.update(pd.DataFrame(change))
+    #last_twelve_or_more_rows.update(pd.DataFrame(change),errors='raise')
+
+    # For unknown reasons, the last_twelve_or_more_rows.update() was failing.
+    # Instead, force a manual replacement below.
+    temp_df = pd.DataFrame(change)
+    print(f'index for temp_df is {temp_df.index.values}')
+    print(f'index for last_twelve_or_more_rows is {last_twelve_or_more_rows.index.values}')
+    for col in last_twelve_or_more_rows.columns:
+        if col in temp_df.columns:
+            #last_twelve_or_more_rows[col].fillna(temp_df[col], inplace=True)
+            last_twelve_or_more_rows[col] = temp_df[col].copy()
+
+    del temp_df
 
     list_of_flag_names = ['ASVCO2_GENERAL_ERROR_FLAGS', 'ASVCO2_ZERO_ERROR_FLAGS',
     'ASVCO2_SPAN_ERROR_FLAGS', 'ASVCO2_SECONDARYSPAN_ERROR_FLAGS',
@@ -1675,7 +1680,13 @@ def add_final_summary_rows_v2(super_big_val_df):
     list_of_NaN_cols += list_of_flag_names
 
     for col in list_of_NaN_cols:
-        last_twelve_or_more_rows[col]=[np.NaN,np.NaN]*num_ranges
+        last_twelve_or_more_rows[col] = [np.NaN]*(2*num_ranges)
+
+    print("!### This is the change !###")
+    pp = pprint.PrettyPrinter(indent=4)
+    pp.pprint(change)
+    print("!### This is last_twelve_or_more_rows after update() !###")
+    print(last_twelve_or_more_rows[['datetime'] + list_of_cols_for_stats])
 
     #super_big_val_df = super_big_val_df.append(last_two_rows,ignore_index=True)
     super_big_val_df = super_big_val_df.append(last_twelve_or_more_rows,ignore_index=True)
@@ -1705,6 +1716,25 @@ def val_fix_span_coeff_in_dict(bigDictionary):
             bigDictionary[k]['CO2kspan2'] = [np.NaN]*10
     return bigDictionary
 
+def pressure_range_checks(on_state_name,off_state_name,Pdiff_limit,super_big_val_df):
+    f_on = super_big_val_df['mode'] == on_state_name
+    f_off = super_big_val_df['mode'] == off_state_name
+    P_on = super_big_val_df.loc[f_on,'Li_Pres_ave'].to_list()
+    P_off =super_big_val_df.loc[f_off,'Li_Pres_ave'].to_list()
+    P_diff = []
+    new_reasons = []
+    #print(f'len(P_apon) = {len(P_apon)}')
+    #print(f'len(P_apoff) = {len(P_apoff)}')
+    min_len = min(len(P_on),len(P_off))
+    for idx in range(0,min_len):
+        P_diff.append(P_on[idx]-P_off[idx])
+        if ( P_diff[idx] < Pdiff_limit ):
+            new_reasons.append(f"""The pressure difference between {on_state_name} 
+            and {off_state_name} is not greater than {Pdiff_limit}kPa. """)
+        else:
+            new_reasons.append('')
+    return new_reasons, f_off
+
 def val_df_add_range_check(super_big_val_df):
     # create two new columns, out_of_range and out_of_range_reason
     N_rows = len(super_big_val_df)
@@ -1714,24 +1744,8 @@ def val_df_add_range_check(super_big_val_df):
     super_big_val_df['out_of_range_reason']=['']*N_rows
     #last_two_rows = super_big_val_df.iloc[-2:,:]
     
-    # future provision to do range check here
-    # f_apoff = super_big_val_df['mode'].str.contains("APOFF")
-    # f_apon = super_big_val_df['mode'].str.contains("APON")
-    f_apoff = super_big_val_df['mode'] == "APOFF"
-    f_apon = super_big_val_df['mode'] == "APON"
-    P_apon = super_big_val_df.loc[f_apon,'Li_Pres_ave'].to_list()
-    P_apoff =super_big_val_df.loc[f_apoff,'Li_Pres_ave'].to_list()
-    P_diff = []
-    new_reasons = []
-    #print(f'len(P_apon) = {len(P_apon)}')
-    #print(f'len(P_apoff) = {len(P_apoff)}')
-    min_len = min(len(P_apon),len(P_apoff))
-    for idx in range(0,min_len):
-        P_diff.append(P_apon[idx]-P_apoff[idx])
-        if ( P_diff[idx] < 2.5 ):
-            new_reasons.append('The pressure difference between APON and APOFF is not greater than 2.5kPa')
-        else:
-            new_reasons.append('')
+    # Range check for APOFF and APON here
+    new_reasons, f_apoff = pressure_range_checks("APON","APOFF",2.5,super_big_val_df)
     
     reasons = super_big_val_df.loc[f_apoff,'out_of_range_reason'].to_list()
     out_of_range_codes = super_big_val_df.loc[f_apoff,'out_of_range'].to_list()
@@ -1743,9 +1757,77 @@ def val_df_add_range_check(super_big_val_df):
     super_big_val_df.loc[f_apoff,'out_of_range_reason'] = reasons
     super_big_val_df.loc[f_apoff,'out_of_range'] = out_of_range_codes
 
+    # Range check for EPOFF and EPON
+    new_reasons, f_epoff = pressure_range_checks("EPON","EPOFF",2.5,super_big_val_df)
+
+    reasons = super_big_val_df.loc[f_epoff,'out_of_range_reason'].to_list()
+    out_of_range_codes = super_big_val_df.loc[f_epoff,'out_of_range'].to_list()
+    for idx, item in enumerate(reasons):
+        reasons[idx] += new_reasons[idx]
+        if len(new_reasons[idx]) != 0:
+            out_of_range_codes[idx] = 1  # 1 - something was out of range, 0 - within range
+
+    super_big_val_df.loc[f_epoff,'out_of_range_reason'] = reasons
+    super_big_val_df.loc[f_epoff,'out_of_range'] = out_of_range_codes
+
+    # Range check for SPOFF and SPON
+    new_reasons, f_spoff = pressure_range_checks("SPON","SPOFF",2.0,super_big_val_df)
+
+    reasons = super_big_val_df.loc[f_spoff,'out_of_range_reason'].to_list()
+    out_of_range_codes = super_big_val_df.loc[f_spoff,'out_of_range'].to_list()
+    for idx, item in enumerate(reasons):
+        reasons[idx] += new_reasons[idx]
+        if len(new_reasons[idx]) != 0:
+            out_of_range_codes[idx] = 1  # 1 - something was out of range, 0 - within range
+
+    super_big_val_df.loc[f_spoff,'out_of_range_reason'] = reasons
+    super_big_val_df.loc[f_spoff,'out_of_range'] = out_of_range_codes
+
+    # Range check for ZPOFF and ZPON
+    new_reasons, f_zpoff = pressure_range_checks("ZPON","ZPOFF",0.0,super_big_val_df)
+
+    reasons = super_big_val_df.loc[f_zpoff,'out_of_range_reason'].to_list()
+    out_of_range_codes = super_big_val_df.loc[f_zpoff,'out_of_range'].to_list()
+    for idx, item in enumerate(reasons):
+        reasons[idx] += new_reasons[idx]
+        if len(new_reasons[idx]) != 0:
+            out_of_range_codes[idx] = 1  # 1 - something was out of range, 0 - within range
+
+    super_big_val_df.loc[f_zpoff,'out_of_range_reason'] = reasons
+    super_big_val_df.loc[f_zpoff,'out_of_range'] = out_of_range_codes
+
+    # Do relative humidity check on standard deviation, use 1% relative humidity tolerance
+    new_reasons = []
+    # RH_sd_list = super_big_val_df.loc[:,'RH_sd'].to_list()
+    # len_RH_sd = len(RH_sd_list)
+    # for idx in range(0,len_RH_sd):
+    #     if ( RH_sd_list[idx] > 1.0 ):
+    #         new_reasons.append(f"The standard deviation of relative humidity exceeded 1.0%. ")
+    #     else:
+    #         new_reasons.append('')
+    rh_mean_mean = super_big_val_df['RH_ave'].mean()
+    ones = pd.Series([1]*len(super_big_val_df['RH_ave']))
+    RH_mean_delta_from_RH_mean_mean = (super_big_val_df['RH_ave']-ones*rh_mean_mean).to_list()
+    for rh_delta, idx  in enumerate(RH_mean_delta_from_RH_mean_mean):
+        if ( rh_delta > 3.0 or rh_delta < -3.0 ):
+            new_reasons.append(f"""The difference between the average relative humidity during this state and the average 
+            of all average relative humidities during this period exceeded 3.0%.""")
+        else:
+            new_reasons.append('')
+
+    reasons = super_big_val_df.loc[:,'out_of_range_reason'].to_list()
+    out_of_range_codes = super_big_val_df.loc[:,'out_of_range'].to_list()
+    for idx, item in enumerate(reasons):
+        reasons[idx] += new_reasons[idx]
+        if len(new_reasons[idx]) != 0:
+            out_of_range_codes[idx] = 1  # 1 - something was out of range, 0 - within range
+
+    super_big_val_df.loc[:,'out_of_range_reason'] = reasons
+    super_big_val_df.loc[:,'out_of_range'] = out_of_range_codes
+
     # take output from range check here
-    super_big_val_df.loc[N_rows-2:N_rows-1,'out_of_range'] = [False]*2
-    super_big_val_df.loc[N_rows-2:N_rows-1,'out_of_range_reason'] = ['']*2
+    # super_big_val_df.loc[N_rows-2:N_rows-1,'out_of_range'] = [False]*2
+    # super_big_val_df.loc[N_rows-2:N_rows-1,'out_of_range_reason'] = ['']*2
     
     return super_big_val_df
 
@@ -2005,7 +2087,7 @@ def load_Val_file(val_filename,big_dry_df=pd.DataFrame(),\
 if __name__ == '__main__':
 
     #### Good stuff ####
-    path_to_data='./data/3CB94292C/'
+    path_to_data='./data/3CB94292E/'
     path_to_ALL= path_to_data + 'ALL'
     filenames=glob.glob(path_to_ALL + '/2021*.txt')
     filenames.sort()
@@ -2045,7 +2127,7 @@ if __name__ == '__main__':
     super_big_stats_df = pd.concat(list_of_stats_df,axis=0,ignore_index=True)
     super_big_flags_df = pd.concat(list_of_flags_df,axis=0,ignore_index=True)
     super_big_coeff_sync_df = pd.concat(list_of_coeff_sync_df,axis=0,ignore_index=True)
-    super_big_df.to_csv(path_to_data + 'raw_w_summary_3CB94292C.csv', index=False)
+    super_big_df.to_csv(path_to_data + 'raw_w_summary_3CB94292E.csv', index=False)
     #### END Good stuff ####
 
     # pd.set_option('max_columns',None)
@@ -2059,12 +2141,20 @@ if __name__ == '__main__':
     # print(super_big_stats_df.describe(include='all'))
     # pd.reset_option('max_columns')
 
-    super_big_stats_df.to_csv(path_to_data + 'stats_3CB94292C.csv', index=False)
+    super_big_stats_df.to_csv(path_to_data + 'stats_3CB94292E.csv', index=False)
 
+    #validation_filename = './data/3CADC7571/3CADC7571_Validation_20210817-222532.txt'
+    #validation_filename = './data/3CADC7565/3CADC7565_Validation_20210820-230908.txt'
+    #validation_filename = './data/3CA8A2538/3CA8A2538_Validation_20210813-221913.txt'
+    #validation_filename = './data/3CA8A2535/3CA8A2535_Validation_20210811-183246.txt'
+    #validation_filename = './data/3CA8A2533/3CA8A2533_Validation_20210812-192805.txt'
     validation_filename = './data/3CB94292C/3CB94292C_Validation_20211012-210208.txt'
+    #validation_filename = './data/3CB94292E/3CB94292E_Validation_20210921-223759.txt'
+    #validation_filename = './data/3CB942928/3CB942928_Validation_20210915-001423.txt'
+    #validation_filename = './data/3CD6D1DD5/3CD6D1DD5_Validation_20211005-225409.txt'
     super_big_val_df = load_Val_file(validation_filename,super_big_dry_df_sync,\
         super_big_stats_df,super_big_flags_df,super_big_coeff_sync_df)
-    super_big_val_df.to_csv(path_to_data + 'Report_Summary_parsed_from_every_txt_file_3CB94292C.csv',index=False)
+    super_big_val_df.to_csv(path_to_data + 'Report_Summary_parsed_from_every_txt_file_3CB94292E.csv',index=False)
 
     # print('big df timestamp=',super_big_df['time'].iloc[0])
     # print('val df timestamp=',super_big_val_df['time'].iloc[0])
