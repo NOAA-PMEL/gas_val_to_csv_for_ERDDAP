@@ -1,4 +1,8 @@
 **/data
 **/.venv
 *.pyc
-*.json
+parsed_data_pascal_style.json
+parsed_data_w_other_stuff_pascal_style.json
+other_stuff_from_val_file.json
+scratchwork.py
+Saildrone_raw_df_columns.json

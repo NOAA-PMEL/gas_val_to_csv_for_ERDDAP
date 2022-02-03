@@ -43,6 +43,42 @@ def loadASVall_coeff(filename):
 
     return df
 
+def loadASVall_coeff_with_dates(filename):
+    coeff = []
+    # apoff = []
+    linenum = 0
+    pattern_coeff = re.compile("COEFF")  
+    with open(filename, 'rt') as myfile:
+        for line in myfile:
+            linenum += 1
+            if pattern_coeff.search(line) != None:  # If a match is found
+                coeff.append((linenum, line.rstrip('\n')))
+    
+    # No coeff found, insert NaN and Jan 1st in the year 1 A.D?
+    if ( len(coeff) == 0 ):  
+        coeff = [(0,'COEFF: 	CO2LastZero: 01 JAN 0001'),\
+        (1,'COEFF: 	CO2kzero: NaN'),\
+        (2,'COEFF: 	CO2LastSpan: 01 JAN 0001'),\
+        (3,'COEFF: 	CO2LastSpan2: 01 JAN 0001'),\
+        (4,'COEFF: 	CO2kspan: NaN'),\
+        (5,'COEFF: 	CO2kspan2: NaN')]
+    
+    df = pd.DataFrame(coeff, columns=['Linenumber', 'Data'])
+    df = df.Data.str.split(':', expand=True)
+    df = df.drop(columns=[0]).rename(columns={1: "label", 2: "coeff"})
+
+    mask1 = (df['label'].str.contains("CO2k")) | (df['label'].str.contains("CO2L")) 
+    df = df[mask1]  #take only lines with coefficients
+    mask2 = df.index < 7  
+    df = df[mask2]  #take first set of coefficients after span
+
+    # Pascal, 8/19/2021, remove /t
+    df['label'] = df['label'].str.strip()
+
+    df = df.reset_index()
+
+    return df
+
 def loadASVall_coeff_sync(filename):
     coeff = []
     # apoff = []
@@ -705,6 +741,200 @@ def parse_all_file_df_w_summary(filename):
             sys_rep[k]=v
 
     coeff_df = loadASVall_coeff(filename)
+    flags_df = loadASVall_flags(filename)
+    data_df = loadASVall_data(filename)
+    dry_df = loadASVall_dry(filename)  # new stuff
+
+    data_df = all_df_make_temp_and_dry_correction(data_df,coeff_df,sys_rep)
+
+    # pd.set_option('max_columns',None)
+    # print(coeff_df.describe(include='all'))
+    # print(coeff_df.head())
+    # print(data_df.describe(include='all'))
+    # print(data_df.head())
+    
+
+    # add in extra columns to data_df from system report, sys_rep
+    big_df = data_df.copy()
+    num_rows=len(big_df)
+    for k,v in sys_rep.items():
+        #duplicates=[v]*num_rows
+        #big_df[k]=duplicates
+        big_df[k]=""
+    for index, row in coeff_df.iterrows():
+        #print(row['coeff'],row['label'])
+        #print(f'row of coeff = {row[/'coeff']}, row of label = {row['label']}')
+        #duplicates=[row['coeff']]*num_rows
+        big_df[row['label']]=""
+
+    #Pascal, 8/13/2021, choose which gas list to use based upon time string from filename,
+    #will need to update this to a more fully featured lookup later
+    time_str=re.search(r'\d{8}_\d{6}\.txt',filename)[0]  #grab 8 digits, underscore and 6 digits
+    year_month_day_str = re.split(r'_',time_str)[0]
+    num_yr_mo_dd = float(year_month_day_str)
+    if ( (20210801 - num_yr_mo_dd) > 0 ):  # if it preceded Aug 1 2021, then used older gaslists
+        if ((20210420 - num_yr_mo_dd) > 0):
+            gaslist=[0, 104.25, 349.79, 552.9, 732.64, 999.51, 1487.06, 1994.25] #552.9 before 4/27
+        else:
+            gaslist=[0, 104.25, 349.79, 506.16, 732.64, 999.51, 1487.06, 1994.25]
+    else:  # use newer gaslist if after Aug 1 2021
+        gaslist=[0, 104.25, 349.79, 494.72, 732.64, 999.51, 1487.06, 1961.39] #update in early Aug 2021
+    
+    #add column for standard gas
+    mask_EPOFF = data_df['State'].str.contains('EPOFF')
+    df_epoff = data_df[mask_EPOFF]
+    #print(f'len(df_epoff) = {len(df_epoff)}')
+    mins=[]
+    for index, row in df_epoff.iterrows():
+        for gas in gaslist:
+            #print(row['CO2(ppm)'])
+            minimum=abs(float(row['CO2(ppm)'])-gas)
+            #print(f'minimum = {minimum}')
+            if minimum<50:
+                #df_epoff['gas_standard'][i]=gas
+                mins.append(gas)
+    
+    closest_gas_standards = pd.Series(data=mins,dtype='float64')
+    most_likely_gas_standard = closest_gas_standards.median()
+    # print(closest_gas_standards.values)
+    big_df['gas_standard']=[most_likely_gas_standard]*num_rows
+
+    #### Check for number of samples per state ####
+    # slice = big_df[['TS','State','CO2(ppm)']]
+    # check = slice.groupby('State').count()#.agg(['mean','std','count'])
+    # pd.set_option('max_columns',None)
+    # print('#### check each mode statistics ####')
+    # print(check)
+    # pd.reset_option('max_columns')
+
+    ### New stuff, figure out most probable span gas ###
+    min=max(gaslist)
+    for gas in gaslist:
+        diff=abs(gas-500)
+        if diff < min:
+            most_probable_span_gas = gas
+            min = diff
+
+    #### New stuff, create residual columns ####
+    big_df = all_df_make_dry_residual_columns(big_df,most_probable_span_gas)
+
+    #construct final row, which is summary data into big_df
+    final_row = pd.DataFrame()
+    for col_name in data_df.columns.values:
+        if ( col_name == 'State'):
+            final_row[col_name]=['Summary']
+        else:
+            final_row[col_name]=""
+    for k,v in sys_rep.items():
+        final_row[k]=v
+    for index, row in coeff_df.iterrows():
+        final_row[row['label']]=row['coeff']
+    for col_name in flags_df.columns.values:  # NEW, 9/7/2021
+        if (col_name != 'index'):
+            final_row[col_name]=flags_df[col_name]  # NEW, 9/7/2021
+
+    #special manipulations to move between raw data and sample data    
+    final_ts_str = big_df['TS'].iloc[-1]
+    final_ts_str = final_ts_str.strip()
+    last_whole_sec_idx = re.search(r'\.\d',final_ts_str).span()[0]
+    floored_final_ts_str = final_ts_str[:last_whole_sec_idx] + 'Z'
+    final_ts_plus_1sec = dt.datetime.strptime(floored_final_ts_str, '%Y-%m-%dT%H:%M:%SZ') + \
+        dt.timedelta(0,1)
+    final_row['TS']=final_ts_plus_1sec.strftime(' %Y-%m-%dT%H:%M:%S') + '.0Z'
+    final_row['SN']=big_df['SN'].iloc[-1]
+    final_row['gas_standard']=big_df['gas_standard'].iloc[-1]
+
+    big_df['last_ASVCO2_validation'] = [final_row['last_ASVCO2_validation'].iloc[-1]]*num_rows
+
+    #### special additional items for final row (summary data) ####
+    final_row['CO2DETECTOR_vendor_name']=['LI-COR Biosciences']
+    final_row['CO2DETECTOR_model_name']=['LI-830']
+
+    #print(f'before adding last row, len(big_df) = {len(big_df)}')
+    #print(f'len(final_row) = {len(final_row)}')
+    big_df = pd.concat([big_df,final_row], axis=0, ignore_index=True)
+    #print(f'after adding last row, len(big_df) = {len(big_df)}')
+
+    # print('big_df is like...')
+    # print(big_df.describe(include='all'))
+    # print(big_df.head())
+    # print('END big_df')
+
+    big_df = big_df.drop(columns=['serial','time','gps'])
+
+    #### Reorder columns ####
+    list_of_column_names = big_df.columns.to_list()
+    idx_res_chunk_start = list_of_column_names.index('gas_standard')
+    idx_res_chunk_end = list_of_column_names.index('residual_dry')
+    idx_last_val_date = list_of_column_names.index('last_ASVCO2_validation')
+    #idx_last_physical_datum = list_of_column_names('CO2_dry')
+    reordered_col_names = list_of_column_names[0:3] + \
+        list_of_column_names[idx_res_chunk_start:idx_res_chunk_end+1] + \
+        [list_of_column_names[idx_last_val_date]] + \
+        list_of_column_names[3:idx_last_val_date] + \
+        list_of_column_names[idx_last_val_date+1:idx_res_chunk_start] + \
+        list_of_column_names[idx_res_chunk_end+1:len(list_of_column_names)]
+    big_df = big_df[reordered_col_names]
+    for name in list_of_column_names:
+        if (name not in reordered_col_names):
+            raise Exception(f'ERROR: {name} did make it into reordered columns')
+
+
+    ERDDAP_rename_dict = {'State':'INSTRUMENT_STATE','TS':'time','SN':'SN_ASVCO2',\
+    'CO2(ppm)':'CO2_ASVCO2','Li_Temp(C)':'CO2DETECTOR_TEMP_ASVCO2',\
+    'Li_Pres(kPa)':'CO2DETECTOR_PRESS_UNCOMP_ASVCO2',\
+    'Li_RawSample':'CO2DETECTOR_RAWSAMPLE_ASVCO2',\
+    'Li_RawReference':'CO2DETECTOR_RAWREFERENCE_ASVCO2',\
+    'RH(%)':'RH_ASVCO2','RH_T(C)':'RH_TEMP_ASVCO2','O2(%)':'O2_ASVCO2',\
+    'ver':'ASVCO2_firmware','sample':'sampling_frequency',\
+    'LI_ver':'CO2DETECTOR_firmware','LI_ser':'CO2DETECTOR_serialnumber',\
+    'ASVCO2_secondaryspan2_concentration':'ASVCO2_secondaryspan_concentration',\
+    'ASVCO2_ATRH_serial':'ASVCO2_ATRH_serialnumber',\
+    'ASVCO2_O2_serial':'ASVCO2_O2_serialnumber',\
+    'ASVCO2_manufacturer':'ASVCO2_vendor_name',\
+    'CO2kzero':'CO2DETECTOR_ZERO_COEFFICIENT_ASVCO2',\
+    'CO2kspan':'CO2DETECTOR_SPAN_COEFFICIENT_ASVCO2',\
+    'CO2kspan2':'CO2DETECTOR_SECONDARY_COEFFICIENT_ASVCO2',\
+    'gas_standard':'CO2_REF_LAB',\
+    'CO2_dry':'CO2_DRY_ASVCO2','CO2_dry_Tcorr':'CO2_DRY_TCORR_ASVCO2',\
+    'residual':'CO2_RESIDUAL_ASVCO2','residual_dry':'CO2_DRY_RESIDUAL_ASVCO2',\
+    'residual_dry_Tcorr':'CO2_DRY_TCORR_RESIDUAL_ASVCO2'}
+    
+    big_df = big_df.rename(columns=ERDDAP_rename_dict)
+
+    #Last and final thing, add in Notes column
+    #big_df['Notes'] = ['x'*257]*len(big_df)
+    big_df['Notes'] = ['']*len(big_df)
+
+    pd.reset_option('max_columns')
+
+    return big_df
+
+def parse_all_file_df_w_summary_v2(filename):
+    #filename = './data/1006/20210430/ALL/20210429_183017.txt'
+    linenum = 0
+    with open(filename, 'rt') as myfile:
+        sys_rep={}
+        for line in myfile:
+            linenum += 1
+            if '=' in line:  # equals sign found and system report likely
+                line = line.rstrip('\n')
+                line = line.strip()
+                lhs_and_rhs = re.split(r'=',line)
+                sys_rep[lhs_and_rhs[0].strip()]=lhs_and_rhs[1]
+            if 'LOG:' in line:
+                break
+    #print(sys_rep)
+    
+    if ( 'serial' in sys_rep ):
+        ASVCO2_sn = sys_rep['serial'].strip()
+    else:
+        raise Exception('No serial number entered in system report from {filename}, cannot continue.')
+    
+    sys_rep = all_update_missing_v1_8(sys_rep,ASVCO2_sn)  #new for v2
+
+    #coeff_df = loadASVall_coeff(filename)
+    coeff_df = loadASVall_coeff_with_dates(filename)  #new for v2
     flags_df = loadASVall_flags(filename)
     data_df = loadASVall_data(filename)
     dry_df = loadASVall_dry(filename)  # new stuff
@@ -1798,22 +2028,22 @@ def val_df_add_range_check(super_big_val_df):
 
     # Do relative humidity check on standard deviation, use 1% relative humidity tolerance
     new_reasons = []
-    # RH_sd_list = super_big_val_df.loc[:,'RH_sd'].to_list()
-    # len_RH_sd = len(RH_sd_list)
-    # for idx in range(0,len_RH_sd):
-    #     if ( RH_sd_list[idx] > 1.0 ):
-    #         new_reasons.append(f"The standard deviation of relative humidity exceeded 1.0%. ")
-    #     else:
-    #         new_reasons.append('')
-    rh_mean_mean = super_big_val_df['RH_ave'].mean()
-    ones = pd.Series([1]*len(super_big_val_df['RH_ave']))
-    RH_mean_delta_from_RH_mean_mean = (super_big_val_df['RH_ave']-ones*rh_mean_mean).to_list()
-    for rh_delta, idx  in enumerate(RH_mean_delta_from_RH_mean_mean):
-        if ( rh_delta > 3.0 or rh_delta < -3.0 ):
-            new_reasons.append(f"""The difference between the average relative humidity during this state and the average 
-            of all average relative humidities during this period exceeded 3.0%.""")
+    RH_sd_list = super_big_val_df.loc[:,'RH_sd'].to_list()
+    len_RH_sd = len(RH_sd_list)
+    for idx in range(0,len_RH_sd):
+        if ( RH_sd_list[idx] > 1.0 ):
+            new_reasons.append(f"The standard deviation of relative humidity exceeded 1.0%. ")
         else:
             new_reasons.append('')
+    # rh_mean_mean = super_big_val_df['RH_ave'].mean()
+    # ones = pd.Series([1]*len(super_big_val_df['RH_ave']))
+    # RH_mean_delta_from_RH_mean_mean = (super_big_val_df['RH_ave']-ones*rh_mean_mean).to_list()
+    # for rh_delta, idx  in enumerate(RH_mean_delta_from_RH_mean_mean):
+    #     if ( rh_delta > 3.0 or rh_delta < -3.0 ):
+    #         new_reasons.append(f"""The difference between the average relative humidity during this state and the average 
+    #         of all average relative humidities during this period exceeded 3.0%.""")
+    #     else:
+    #         new_reasons.append('')
 
     reasons = super_big_val_df.loc[:,'out_of_range_reason'].to_list()
     out_of_range_codes = super_big_val_df.loc[:,'out_of_range'].to_list()
@@ -1879,6 +2109,54 @@ def val_update_missing_v1_8(config_stuff,sn):
         raise Exception (f'the serial number {sn} is not in the list of applicable serial numbers')
 
     return config_stuff
+
+def all_update_missing_v1_8(sys_rep,sn):
+
+    list_of_applicable_sn = [
+        "3CADC7573",
+        "3CADC7565",
+        "3CA8A2538",
+        "3CA8A2535",
+        "3CA8A2533",
+        "3CADC7571",
+        "3CB942928",
+        "3CB94292E",
+        "3CB94292C",
+        "3CD6D1DD5"]
+
+    if ( sn in list_of_applicable_sn ):
+        # read in json file from config folder and look up parameters by serial number
+        json_file = open('./config/missing_from_Saildrone_v1_8.json','r',encoding='utf-8')
+        missing_from_Saildrone_v1_8 = json.load(json_file)
+        json_file.close()
+
+        # maybe_missing = {'secondaryspan_calibrated_temperature': span2_temp,  # unique
+        # 'secondaryspan_calibrated_spanconcentration': 502.76,
+        # 'last_secondaryspan_temperaturedependantslope': '2021-02-22T00:00:00Z',  
+        # 'secondaryspan_temperaturedependantslope':float(span2_20deg_cal2_temp_licor.co2kspan2.values),  # unique
+        # 'secondaryspan_temperaturedependantslopefit':float(oventesta_licor_cal2_span2.R2.values),  # unique
+        # 'secondaryspan_calibrated_rh': 1.27283262,
+        # 'ASVCO2_secondaryspan2_concentration': 1994.25,
+        # 'last_ASVCO2_validation': this_last_ASVCO2_validation,  # unique
+        # 'pressure_bias': np.NaN,
+        # 'last_pressure_bias_measured' : '', # format of '0001-01-01T00:00:00Z',
+        # 'ASVCO2_ATRH_serial': '', # format of 'XXXXXXXXX',
+        # 'ASVCO2_O2_serial':'EK59499036', # unique
+        # 'ASVCO2_manufacturer': 'PMEL',
+        # 'secondaryspan_calibrated_spanserialnumber':'JA02448',
+        # 'ASVCO2_secondaryspan_serialnumber':'CB11490',
+        # 'ASVCO2_span_serialnumber':'CC738196',
+        # 'last_secondaryspan_calibration':'2021-02-22T00:00:00Z'}
+
+        maybe_missing = missing_from_Saildrone_v1_8[sn]
+        for kk, vv in maybe_missing.items():
+                if (kk not in sys_rep):
+                    sys_rep[kk] = vv
+        
+    else:
+        raise Exception (f'the serial number {sn} is not in the list of applicable serial numbers')
+
+    return sys_rep
 
 def load_Val_file(val_filename,big_dry_df=pd.DataFrame(),\
     big_stats_df=pd.DataFrame(),big_flags_df=pd.DataFrame(),\
@@ -2107,7 +2385,7 @@ if __name__ == '__main__':
         f.close()
         del f
         if ( COEFF_found_in_file ):
-            df_file = parse_all_file_df_w_summary(filename)
+            df_file = parse_all_file_df_w_summary_v2(filename)
             df_dry_sync, df_dry = loadASVall_dry(filename)
             df_stats = loadASVall_stats(filename)
             df_flags = loadASVall_flags(filename)
