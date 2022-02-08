@@ -87,5 +87,23 @@
     "ASVCO2_secondaryspan_serialnumber":"CB11490", 
     "ASVCO2_span_serialnumber":"CC738196",
     "ASVCO2_O2_serial":"EK59499036"
+    },
+"3CADC7573":
+    {"secondaryspan_calibrated_temperature":22.766,
+    "secondaryspan_calibrated_spanconcentration":506.16,
+    "last_secondaryspan_temperaturedependantslope":"2021-06-10T00:00:00Z",
+    "secondaryspan_temperaturedependantslope":-0.002407949,
+    "secondaryspan_temperaturedependantslopefit":0.993,
+    "secondaryspan_calibrated_rh":0.985,
+    "ASVCO2_secondaryspan2_concentration":1994.25,
+    "pressure_bias": 0.09,
+    "last_pressure_bias_measured":"2021-10-03T03:19:10Z", 
+    "ASVCO2_ATRH_serial":"3FD5",
+    "ASVCO2_manufacturer":"PMEL",
+    "last_secondaryspan_calibration":"2021-06-10T00:00:00Z",
+    "secondaryspan_calibrated_spanserialnumber":"CC738196",
+    "ASVCO2_secondaryspan_serialnumber":"CB11490", 
+    "ASVCO2_span_serialnumber":"CC739825",
+    "ASVCO2_O2_serial":"GC22699018"
     }
 }

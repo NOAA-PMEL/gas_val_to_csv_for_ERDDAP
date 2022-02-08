@@ -2451,7 +2451,8 @@ def all_update_missing_v1_8(sys_rep,sn):
         "1005",
         "1006",
         "1008",
-        "1009"]
+        "1009",
+        "3CADC7573"]
 
     dict_of_last_ASVCO2_validation = {
         "1004":"2021-05-13T00:00:00Z",
@@ -2459,6 +2460,7 @@ def all_update_missing_v1_8(sys_rep,sn):
         "1006":"2021-04-30T00:00:00Z",
         "1008":"2021-04-29T00:00:00Z",
         "1009":"2021-04-28T00:00:00Z",
+        "3CADC7573":"2021-08-18T00:00:00Z"
     }
 
     if ( sn in list_of_applicable_sn ):
@@ -2488,9 +2490,14 @@ def all_update_missing_v1_8(sys_rep,sn):
 
         maybe_missing = missing_from_10XX_v1_8[sn]
         maybe_missing['last_ASVCO2_validation'] = this_last_ASVCO2_validation
-        for kk, vv in maybe_missing.items():
-                if (kk not in sys_rep):
+        if (sn == "3CADC7573"):
+            for kk, vv in maybe_missing.items():
+                sys_rep[kk] = vv  # force update for 3CADC7573
+        else:
+            for kk, vv in maybe_missing.items():
+                if (kk not in sys_rep):  # only update if missing for 10XX
                     sys_rep[kk] = vv
+
         
     else:
         raise Exception (f'the serial number {sn} is not in the list of applicable serial numbers')
@@ -2660,7 +2667,14 @@ def val_update_CO2kspan2_10XX(config_stuff):
     cskeys = list(config_stuff.keys())
     something = type(config_stuff[cskeys[0]]['LI_ser'])
     something_else = config_stuff[cskeys[0]]['LI_ser']
-    ASVCO2_sn = str(int(config_stuff[cskeys[0]]['serial']))
+    ASVCO2_sn_candidate = config_stuff[cskeys[0]]['serial']
+    if type(ASVCO2_sn_candidate) == type(0):  # is an integer
+        ASVCO2_sn = str(int(config_stuff[cskeys[0]]['serial']))
+    elif type(ASVCO2_sn_candidate) == type('string'):  # is a string
+        ASVCO2_sn = ASVCO2_sn_candidate
+    else:
+        raise Exception(f'Unexpected datatype for ASVCO2 serial number {type(ASVCO2_sn_candidate)}')
+
     print(f'type of LI_ser = {something}')
     print(f'LI_ser = {something_else}')
     # pp = pprint.PrettyPrinter(indent=4)
@@ -2751,7 +2765,8 @@ def val_update_CO2kspan2_10XX(config_stuff):
         "1005",
         "1006",
         "1008",
-        "1009"]
+        "1009",
+        "3CADC7573"]
 
     print(f'type(ASVCO2_sn) = {type(ASVCO2_sn)}')
     print(f'ASVCO2_sn = {ASVCO2_sn}')
@@ -2784,10 +2799,15 @@ def val_update_CO2kspan2_10XX(config_stuff):
         maybe_missing['last_ASVCO2_validation'] = this_last_ASVCO2_validation
         maybe_missing['secondaryspan_temperaturedependantslope'] = float(span2_20deg_cal2_temp_licor.co2kspan2.values)
         maybe_missing['secondaryspan_temperaturedependantslopefit'] = float(oventesta_licor_cal2_span2.R2.values)
-        for k, v in config_stuff.items():
-            for kk, vv in maybe_missing.items():
-                if (kk not in config_stuff[k]):
-                    config_stuff[k][kk] = vv
+        if ( ASVCO2_sn == "3CADC7573"):
+            for k, v in config_stuff.items():
+                for kk, vv in maybe_missing.items():
+                    config_stuff[k][kk] = vv  # force update for 3CADC7573
+        else:
+            for k, v in config_stuff.items():
+                for kk, vv in maybe_missing.items():
+                    if (kk not in config_stuff[k]):
+                        config_stuff[k][kk] = vv  # only update if missing in 10XX
         
     else:
         raise Exception (f'the serial number {ASVCO2_sn} is not in the list of applicable serial numbers')
@@ -2992,7 +3012,8 @@ def all_df_final_reorder_10XX(super_big_val_df):
 if __name__ == '__main__':
 
     #### Good stuff ####
-    path_to_data='./data/1004/20210512/'
+    #path_to_data='./data/1004/20210512/'
+    path_to_data = './data/3CADC7573/'
     path_to_ALL= path_to_data + 'ALL'
     filenames=glob.glob(path_to_ALL + '/2021*.txt')
     filenames.sort()
@@ -3033,7 +3054,8 @@ if __name__ == '__main__':
     super_big_stats_df = pd.concat(list_of_stats_df,axis=0,ignore_index=True)
     super_big_flags_df = pd.concat(list_of_flags_df,axis=0,ignore_index=True)
     super_big_coeff_sync_df = pd.concat(list_of_coeff_sync_df,axis=0,ignore_index=True)
-    super_big_df.to_csv(path_to_data + 'raw_w_summary_1004.csv', index=False)
+    #super_big_df.to_csv(path_to_data + 'raw_w_summary_1004.csv', index=False)
+    super_big_df.to_csv(path_to_data + 'raw_w_summary_3CADC7573.csv', index=False)
     #### END Good stuff ####
 
     # pd.set_option('max_columns',None)
@@ -3049,14 +3071,16 @@ if __name__ == '__main__':
 
     super_big_stats_df.to_csv(path_to_data + 'stats_1004.csv', index=False)
 
-    validation_filename = './data/1004/20210512/1004_Validation_20210512-210237.txt'
+    #validation_filename = './data/1004/20210512/1004_Validation_20210512-210237.txt'
     #validation_filename = './data/1005/20210514/1005_Validation_20210514-004141.txt'
     #validation_filename = './data/1006/20210430/1006_Validation_20210430-combo.txt'
     #validation_filename = './data/1008/20210429/1008_Validation_20210429-combo.txt'
     #validation_filename = './data/1009/20210428/1009_Validation_20210427-171323.txt'
+    validation_filename = './data/3CADC7573/3CADC7573_Validation_20210818-225409.txt'
     super_big_val_df = load_Val_file(validation_filename,super_big_dry_df_sync,\
         super_big_stats_df,super_big_flags_df,super_big_coeff_sync_df)
-    super_big_val_df.to_csv(path_to_data + 'Report_Summary_parsed_from_every_txt_file_1004.csv',index=False)
+    #super_big_val_df.to_csv(path_to_data + 'Report_Summary_parsed_from_every_txt_file_1004.csv',index=False)
+    super_big_val_df.to_csv(path_to_data + 'Report_Summary_parsed_from_every_txt_file_3CADC7573.csv',index=False)
 
     # print('big df timestamp=',super_big_df['time'].iloc[0])
     # print('val df timestamp=',super_big_val_df['time'].iloc[0])
