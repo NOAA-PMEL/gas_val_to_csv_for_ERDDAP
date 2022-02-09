@@ -2740,7 +2740,7 @@ def val_update_CO2kspan2_10XX(config_stuff):
     # maybe_missing = {'secondaryspan_calibrated_temperature': span2_temp,  # unique
     # 'secondaryspan_calibrated_spanconcentration': 502.76,
     # 'last_secondaryspan_temperaturedependantslope': '2021-02-22T00:00:00Z',  
-    # 'secondaryspan_temperaturedependantslope':float(span2_20deg_cal2_temp_licor.co2kspan2.values),  # unique
+    # 'secondaryspan_temperaturedependantslope':oventesta_licor_cal2_span2.loc['co2kspan2','slope'],  # unique
     # 'secondaryspan_temperaturedependantslopefit':float(oventesta_licor_cal2_span2.R2.values),  # unique
     # 'secondaryspan_calibrated_rh': 1.27283262,
     # 'ASVCO2_secondaryspan2_concentration': 1994.25,
@@ -2780,7 +2780,7 @@ def val_update_CO2kspan2_10XX(config_stuff):
         # maybe_missing = {'secondaryspan_calibrated_temperature': span2_temp,  # unique
         # 'secondaryspan_calibrated_spanconcentration': 502.76,
         # 'last_secondaryspan_temperaturedependantslope': '2021-02-22T00:00:00Z',  
-        # 'secondaryspan_temperaturedependantslope':float(span2_20deg_cal2_temp_licor.co2kspan2.values),  # unique
+        # 'secondaryspan_temperaturedependantslope':oventesta_licor_cal2_span2.loc['co2kspan2','slope'],  # unique
         # 'secondaryspan_temperaturedependantslopefit':float(oventesta_licor_cal2_span2.R2.values),  # unique
         # 'secondaryspan_calibrated_rh': 1.27283262,
         # 'ASVCO2_secondaryspan2_concentration': 1994.25,
@@ -2797,7 +2797,8 @@ def val_update_CO2kspan2_10XX(config_stuff):
 
         maybe_missing = missing_from_10XX_v1_8[ASVCO2_sn]
         maybe_missing['last_ASVCO2_validation'] = this_last_ASVCO2_validation
-        maybe_missing['secondaryspan_temperaturedependantslope'] = float(span2_20deg_cal2_temp_licor.co2kspan2.values)
+        #maybe_missing['secondaryspan_temperaturedependantslope'] = float(span2_20deg_cal2_temp_licor.co2kspan2.values)   #bug
+        maybe_missing['secondaryspan_temperaturedependantslope'] = float(oventesta_licor_cal2_span2.loc['co2kspan2','slope'])  # fixed
         maybe_missing['secondaryspan_temperaturedependantslopefit'] = float(oventesta_licor_cal2_span2.R2.values)
         if ( ASVCO2_sn == "3CADC7573"):
             for k, v in config_stuff.items():
@@ -3069,7 +3070,7 @@ if __name__ == '__main__':
     # print(super_big_stats_df.describe(include='all'))
     # pd.reset_option('max_columns')
 
-    super_big_stats_df.to_csv(path_to_data + 'stats_1004.csv', index=False)
+    super_big_stats_df.to_csv(path_to_data + 'stats_3CADC7573.csv', index=False)
 
     #validation_filename = './data/1004/20210512/1004_Validation_20210512-210237.txt'
     #validation_filename = './data/1005/20210514/1005_Validation_20210514-004141.txt'
