@@ -2426,8 +2426,8 @@ if __name__ == '__main__':
     #validation_filename = './data/3CA8A2538/3CA8A2538_Validation_20210813-221913.txt'
     #validation_filename = './data/3CA8A2535/3CA8A2535_Validation_20210811-183246.txt'
     #validation_filename = './data/3CA8A2533/3CA8A2533_Validation_20210812-192805.txt'
-    validation_filename = './data/3CB94292C/3CB94292C_Validation_20211012-210208.txt'
-    #validation_filename = './data/3CB94292E/3CB94292E_Validation_20210921-223759.txt'
+    #validation_filename = './data/3CB94292C/3CB94292C_Validation_20211012-210208.txt'
+    validation_filename = './data/3CB94292E/3CB94292E_Validation_20210921-223759.txt'
     #validation_filename = './data/3CB942928/3CB942928_Validation_20210915-001423.txt'
     #validation_filename = './data/3CD6D1DD5/3CD6D1DD5_Validation_20211005-225409.txt'
     super_big_val_df = load_Val_file(validation_filename,super_big_dry_df_sync,\
